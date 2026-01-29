@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>２つの円の交点を通る図形（k入力機能付き）</title>
+    
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/jsxgraph/distrib/jsxgraph.css" />
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/jsxgraph/distrib/jsxgraphcore.js"></script>
+
+    <style>
+        body {
+            font-family: "Helvetica Neue", Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 10px 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+
+        /* モード切替タブ */
+        .mode-selector {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 15px;
+            background: #e0e0e0;
+            padding: 5px;
+            border-radius: 30px;
+            width: fit-content;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .mode-selector label {
+            padding: 10px 25px;
+            cursor: pointer;
+            border-radius: 25px;
+            transition: 0.3s;
+            font-weight: bold;
+            color: #555;
+        }
+        .mode-selector input[type="radio"] { display: none; }
+        .mode-selector input[type="radio"]:checked + label {
+            background-color: #2c3e50;
+            color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        /* 入力パネル */
+        .input-panel {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            border-top: 4px solid #2c3e50;
+        }
+        .input-row-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .input-group {
+            flex: 1;
+            min-width: 280px;
+            padding: 15px;
+            border-radius: 6px;
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+        }
+        .input-group h4 { margin-top: 0; border-bottom: 1px solid #ddd; padding-bottom: 5px;}
+        .input-group.blue { border-left: 4px solid blue; }
+        .input-group.green { border-left: 4px solid green; }
+        
+        .input-items { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .input-items label { font-size: 0.9rem; font-weight: bold; display: flex; align-items: center;}
+        .input-items input {
+            width: 50px; padding: 6px; border: 1px solid #ccc;
+            border-radius: 4px; font-size: 1rem; margin-left: 5px;
+        }
+
+        .mode-standard, .mode-general { display: none; }
+        .active-mode { display: block; }
+
+        .btn-update {
+            background-color: #2c3e50; color: white; border: none;
+            padding: 12px 25px; border-radius: 5px; cursor: pointer;
+            font-weight: bold; font-size: 1rem; width: 100%; margin-top: 15px;
+        }
+        .btn-update:hover { background-color: #1a252f; }
+
+        /* グラフエリア */
+        .container {
+            display: flex; flex-wrap: wrap; gap: 20px;
+            background: white; padding: 20px; border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        #jxgbox {
+            width: 500px; height: 500px; border: 1px solid #ccc;
+            touch-action: none;
+        }
+        .controls { flex: 1; min-width: 300px; }
+        
+        /* k入力エリアのスタイル */
+        .k-control-area {
+            background-color: #fff3cd;
+            border: 1px solid #ffeeba;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        .k-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .k-input-group input {
+            width: 80px;
+            padding: 8px;
+            font-size: 1.2rem;
+            border: 2px solid #3498db;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .btn-animate {
+            background-color: #3498db; color: white; border: none;
+            padding: 10px 20px; border-radius: 5px; font-size: 16px;
+            cursor: pointer; width: 100%; margin-bottom: 15px;
+        }
+        .btn-animate.playing { background-color: #e74c3c; }
+        .error-msg { color: red; font-weight: bold; margin-top: 10px; display: none; }
+    </style>
+</head>
+<body>
+
+    <h1 style="text-align: center;">２つの円の交点を通る図形</h1>
+
+    <div class="mode-selector">
+        <input type="radio" name="mode" id="radio-standard" checked onchange="switchMode('standard')">
+        <label for="radio-standard">標準形 (中心・半径)</label>
+        
+        <input type="radio" name="mode" id="radio-general" onchange="switchMode('general')">
+        <label for="radio-general">一般形 (係数)</label>
+    </div>
+
+    <div class="input-panel">
+        <div class="input-row-container">
+            <div class="input-group blue">
+                <h4 style="color:blue">円1 (青)</h4>
+                <div id="input-c1-std" class="mode-standard active-mode">
+                    <p style="margin:0 0 10px; font-size:0.9em;">\((x-a)^2+(y-b)^2=r^2\)</p>
+                    <div class="input-items">
+                        <label>a: <input type="number" id="c1_a" value="0"></label>
+                        <label>b: <input type="number" id="c1_b" value="0"></label>
+                        <label>r: <input type="number" id="c1_r" value="3" min="0.1"></label>
+                    </div>
+                </div>
+                <div id="input-c1-gen" class="mode-general">
+                    <p style="margin:0 0 10px; font-size:0.9em;">\(x^2+y^2+lx+my+n=0\)</p>
+                    <div class="input-items">
+                        <label>l: <input type="number" id="c1_l" value="0"></label>
+                        <label>m: <input type="number" id="c1_m" value="0"></label>
+                        <label>n: <input type="number" id="c1_n" value="-9"></label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-group green">
+                <h4 style="color:green">円2 (緑)</h4>
+                <div id="input-c2-std" class="mode-standard active-mode">
+                    <p style="margin:0 0 10px; font-size:0.9em;">\((x-c)^2+(y-d)^2=R^2\)</p>
+                    <div class="input-items">
+                        <label>c: <input type="number" id="c2_a" value="4"></label>
+                        <label>d: <input type="number" id="c2_b" value="0"></label>
+                        <label>R: <input type="number" id="c2_r" value="3" min="0.1"></label>
+                    </div>
+                </div>
+                <div id="input-c2-gen" class="mode-general">
+                    <p style="margin:0 0 10px; font-size:0.9em;">\(x^2+y^2+lx+my+n=0\)</p>
+                    <div class="input-items">
+                        <label>l: <input type="number" id="c2_l" value="-8"></label>
+                        <label>m: <input type="number" id="c2_m" value="0"></label>
+                        <label>n: <input type="number" id="c2_n" value="7"></label>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="error-display" class="error-msg"></div>
+        <button class="btn-update" onclick="resetSimulation()">設定を反映して再描画</button>
+    </div>
+
+    <div class="container">
+        <div id="jxgbox" class="jxgbox"></div>
+
+        <div class="controls">
+            
+            <div class="k-control-area">
+                <label for="k-manual-input"><strong>\( k \) の値を指定:</strong></label>
+                <div class="k-input-group">
+                    <input type="number" id="k-manual-input" value="1.0" step="0.1">
+                    <span style="font-size:0.9em; color:#666;">← 数値を入力してEnter</span>
+                </div>
+            </div>
+
+            <button id="playBtn" class="btn-animate" onclick="toggleAnimation()">▶ 自動再生スタート</button>
+            <p><strong>束の方程式：</strong> \( k \cdot f(x,y) + g(x,y) = 0 \)</p>
+            
+            <div id="explanation" style="padding:10px; background:#f9f9f9; border-radius:4px; border:1px solid #ddd;"></div>
+        </div>
+    </div>
+
+    <script>
+        var board = null, k_slider = null;
+        var resultCircle = null, resultLine = null;
+        var animationInterval = null;
+        var currentMode = 'standard';
+        var kInput = document.getElementById('k-manual-input');
+
+        // モード切替
+        function switchMode(mode) {
+            currentMode = mode;
+            var stdEls = document.querySelectorAll('.mode-standard');
+            var genEls = document.querySelectorAll('.mode-general');
+            if (mode === 'standard') {
+                stdEls.forEach(el => el.classList.add('active-mode'));
+                genEls.forEach(el => el.classList.remove('active-mode'));
+            } else {
+                stdEls.forEach(el => el.classList.remove('active-mode'));
+                genEls.forEach(el => el.classList.add('active-mode'));
+            }
+        }
+
+        // 数値入力イベントのリスナー設定
+        kInput.addEventListener('change', function() {
+            if(k_slider) {
+                var val = parseFloat(this.value);
+                // スライダーの範囲外でも動かせるようにするなら範囲チェックは外すが、
+                // 今回はスライダー連動のため範囲内(-10~10)に制限するか、
+                // もしくはスライダーが追従できない値でも計算させるかは設計次第。
+                // ここでは利便性のため値をセットし、再描画します。
+                
+                // アニメーション中なら停止
+                if(animationInterval) toggleAnimation();
+
+                k_slider.setValue(val);
+                board.update();
+                updateVisuals();
+            }
+        });
+        
+        // Enterキーでも反応するように
+        kInput.addEventListener('keypress', function(e) {
+            if(e.key === 'Enter') {
+                this.blur(); // フォーカスを外してchangeイベントを発火させる
+            }
+        });
+
+        // データ取得
+        function getCircleData() {
+            var c1 = {}, c2 = {};
+            var errDiv = document.getElementById('error-display');
+            errDiv.style.display = 'none';
+            errDiv.innerText = '';
+
+            try {
+                if (currentMode === 'standard') {
+                    c1.x = parseFloat(document.getElementById('c1_a').value);
+                    c1.y = parseFloat(document.getElementById('c1_b').value);
+                    c1.r = Math.abs(parseFloat(document.getElementById('c1_r').value));
+                    c1.const = c1.x*c1.x + c1.y*c1.y - c1.r*c1.r;
+
+                    c2.x = parseFloat(document.getElementById('c2_a').value);
+                    c2.y = parseFloat(document.getElementById('c2_b').value);
+                    c2.r = Math.abs(parseFloat(document.getElementById('c2_r').value));
+                    c2.const = c2.x*c2.x + c2.y*c2.y - c2.r*c2.r;
+                } else {
+                    var l1 = parseFloat(document.getElementById('c1_l').value);
+                    var m1 = parseFloat(document.getElementById('c1_m').value);
+                    var n1 = parseFloat(document.getElementById('c1_n').value);
+                    c1.x = -l1 / 2; c1.y = -m1 / 2;
+                    var rSq1 = c1.x*c1.x + c1.y*c1.y - n1;
+                    if (rSq1 < 0) throw "円1が実円になりません。";
+                    c1.r = Math.sqrt(rSq1); c1.const = n1;
+
+                    var l2 = parseFloat(document.getElementById('c2_l').value);
+                    var m2 = parseFloat(document.getElementById('c2_m').value);
+                    var n2 = parseFloat(document.getElementById('c2_n').value);
+                    c2.x = -l2 / 2; c2.y = -m2 / 2;
+                    var rSq2 = c2.x*c2.x + c2.y*c2.y - n2;
+                    if (rSq2 < 0) throw "円2が実円になりません。";
+                    c2.r = Math.sqrt(rSq2); c2.const = n2;
+                }
+            } catch (e) {
+                errDiv.innerText = "エラー: " + e;
+                errDiv.style.display = 'block';
+                return null;
+            }
+            return { c1: c1, c2: c2 };
+        }
+
+        function resetSimulation() {
+            if (animationInterval) toggleAnimation();
+            var data = getCircleData();
+            if (!data) return;
+
+            var C1 = data.c1;
+            var C2 = data.c2;
+
+            if (board) JXG.JSXGraph.freeBoard(board);
+
+            var minX = Math.min(C1.x - C1.r, C2.x - C2.r);
+            var maxX = Math.max(C1.x + C1.r, C2.x + C2.r);
+            var minY = Math.min(C1.y - C1.r, C2.y - C2.r);
+            var maxY = Math.max(C1.y + C1.r, C2.y + C2.r);
+            
+            var paddingX = (maxX - minX) * 0.4 + 2;
+            var paddingY = (maxY - minY) * 0.4 + 2;
+            var width = (maxX + paddingX) - (minX - paddingX);
+            var height = (maxY + paddingY) - (minY - paddingY);
+            if (width > height) { var d = (width - height)/2; minY-=d; maxY+=d; } 
+            else { var d = (height - width)/2; minX-=d; maxX+=d; }
+
+            board = JXG.JSXGraph.initBoard('jxgbox', {
+                boundingbox: [minX - paddingX, maxY + paddingY, maxX + paddingX, minY - paddingY],
+                axis: true, showCopyright: false, keepaspectratio: true
+            });
+
+            board.create('circle', [[C1.x, C1.y], C1.r], {strokeColor:'blue', strokeWidth:1, fixed:true});
+            board.create('circle', [[C2.x, C2.y], C2.r], {strokeColor:'green', strokeWidth:1, fixed:true});
+            
+            // スライダー生成
+            var bbox = board.getBoundingBox();
+            var sX = bbox[0] + (bbox[2]-bbox[0])*0.1;
+            var sY = bbox[1] - (bbox[1]-bbox[3])*0.1;
+            k_slider = board.create('slider', [[sX, sY], [sX + (bbox[2]-bbox[0])*0.3, sY], [-10, 1, 10]], {
+                name: 'k', snapWidth: 0.1
+            });
+
+            // 束の描画
+            resultCircle = board.create('circle', [
+                function() {
+                    var k = k_slider.Value();
+                    if (Math.abs(k + 1) < 0.001) return [0,0];
+                    return [(k * C1.x + C2.x) / (k + 1), (k * C1.y + C2.y) / (k + 1)];
+                },
+                function() {
+                    var k = k_slider.Value();
+                    if (Math.abs(k + 1) < 0.001) return 0;
+                    var cx = (k * C1.x + C2.x) / (k + 1);
+                    var cy = (k * C1.y + C2.y) / (k + 1);
+                    var term = (k * C1.const + C2.const) / (k + 1);
+                    var rSq = cx*cx + cy*cy - term;
+                    return (rSq > 0) ? Math.sqrt(rSq) : 0;
+                }
+            ], {strokeColor: 'red', strokeWidth: 3});
+
+            var lineA = -2*C1.x + 2*C2.x;
+            var lineB = -2*C1.y + 2*C2.y;
+            var lineC = C1.const - C2.const;
+            resultLine = board.create('line', [lineC, lineA, lineB], {
+                strokeColor: 'red', strokeWidth: 3, visible: false
+            });
+
+            k_slider.on('drag', updateVisuals);
+            updateVisuals();
+        }
+
+        function updateVisuals() {
+            if(!k_slider) return;
+            var k = k_slider.Value();
+            
+            // スライダーの値を入力ボックスにも反映（入力中でなければ）
+            if (document.activeElement !== kInput) {
+                kInput.value = k.toFixed(2); // 小数点2桁で見やすく
+            }
+
+            var explanation = document.getElementById('explanation');
+            
+            if (Math.abs(k + 1) < 0.15) {
+                resultCircle.setAttribute({visible: false});
+                resultLine.setAttribute({visible: true});
+                explanation.innerHTML = 'k ≒ -1 : <strong>直線（根軸）</strong>になります。';
+            } else {
+                resultCircle.setAttribute({visible: true});
+                resultLine.setAttribute({visible: false});
+                if(resultCircle.Radius() === 0) explanation.innerHTML = '実円になりません（虚円）。';
+                else explanation.innerHTML = '円の中心と半径が変化しています。';
+            }
+        }
+
+        function toggleAnimation() {
+            var btn = document.getElementById('playBtn');
+            var speed = 0.15; var direction = 1;
+            if (animationInterval) {
+                clearInterval(animationInterval); animationInterval = null;
+                btn.innerHTML = '▶ 自動再生スタート'; btn.classList.remove('playing');
+            } else {
+                btn.innerHTML = '■ ストップ'; btn.classList.add('playing');
+                animationInterval = setInterval(function() {
+                    if(!k_slider) return;
+                    var nextK = k_slider.Value() + (speed * direction);
+                    if (nextK >= 10 || nextK <= -10) direction *= -1;
+                    k_slider.setValue(nextK); 
+                    board.update(); 
+                    updateVisuals();
+                }, 30);
+            }
+        }
+
+        window.onload = resetSimulation;
+    </script>
+
+</body>
+</html>
