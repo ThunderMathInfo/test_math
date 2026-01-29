@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>三角関数のグラフ (tan動径：両サイドに点線延長)</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f4f8;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            margin-bottom: 15px;
+            color: #2c3e50;
+            text-align: center;
+        }
+        .canvas-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            background-color: #fff;
+            cursor: crosshair; 
+        }
+        .controls-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            align-items: center;
+        }
+        .function-selector {
+            display: flex;
+            gap: 10px;
+            background: white;
+            padding: 10px 20px;
+            border-radius: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .function-selector label {
+            cursor: pointer;
+            padding: 5px 15px;
+            border-radius: 20px;
+            transition: background 0.2s;
+            font-weight: bold;
+        }
+        input[type="radio"]:checked + label.lbl-sin { background-color: #e74c3c; color: white; }
+        input[type="radio"]:checked + label.lbl-cos { background-color: #2980b9; color: white; }
+        input[type="radio"]:checked + label.lbl-tan { background-color: #27ae60; color: white; }
+        input[type="radio"] { display: none; }
+
+        .controls {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            background: white;
+            padding: 15px 30px;
+            border-radius: 50px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #555;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+        button:hover { background-color: #333; }
+        button.reset { background-color: #95a5a6; }
+        button.reset:hover { background-color: #7f8c8d; }
+        .slider-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="range"] { width: 200px; cursor: pointer; }
+        .status {
+            font-family: monospace;
+            font-size: 16px;
+            width: 60px;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>三角関数のグラフ生成 (tan動径：両サイドに点線延長)</h1>
+
+    <div class="canvas-container">
+        <canvas id="trigCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="controls-wrapper">
+        <div class="function-selector">
+            <input type="radio" id="funcSin" name="func" value="sin" checked>
+            <label for="funcSin" class="lbl-sin">y = sin θ</label>
+            
+            <input type="radio" id="funcCos" name="func" value="cos">
+            <label for="funcCos" class="lbl-cos">y = cos θ</label>
+            
+            <input type="radio" id="funcTan" name="func" value="tan">
+            <label for="funcTan" class="lbl-tan">y = tan θ</label>
+        </div>
+
+        <div class="controls">
+            <button id="playPauseBtn">再生/停止</button>
+            <button id="resetBtn" class="reset">リセット</button>
+            
+            <div class="slider-group">
+                <label for="angleSlider">θ:</label>
+                <input type="range" id="angleSlider" min="0" max="720" value="0" step="1">
+                <span id="angleDisplay" class="status">0°</span>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('trigCanvas');
+    const ctx = canvas.getContext('2d');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const angleSlider = document.getElementById('angleSlider');
+    const angleDisplay = document.getElementById('angleDisplay');
+    const funcRadios = document.querySelectorAll('input[name="func"]');
+
+    const CIRCLE_RADIUS = 100;
+    const CIRCLE_CENTER_X = 150;
+    const CIRCLE_CENTER_Y = 200;
+    const GRAPH_START_X = 350;
+    const SCALE_X = 200 / (2 * Math.PI); 
+
+    let angleDeg = 0;
+    let isAnimating = false;
+    let animationId;
+    let currentFunc = 'sin';
+    
+    let visibleAsymptotes = new Set(); 
+
+    const COLORS = {
+        sin: '#e74c3c', cos: '#2980b9', tan: '#27ae60',
+        axis: '#666', grid: '#ccc', aux: '#999',
+        asymptote: '#e67e22',
+        tanLineExtension: 'rgba(100, 100, 100, 0.6)'
+    };
+    const ASYMPTOTE_ANGLES = [90, 270, 450, 630];
+
+    function toRad(deg) { return deg * Math.PI / 180; }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const angleRad = toRad(angleDeg);
+        const activeColor = COLORS[currentFunc];
+
+        drawAxes();
+        // 動径（実線部分）と円の描画
+        drawUnitCircle(angleRad); 
+
+        let graphValue, graphPointY;
+
+        if (currentFunc === 'sin') {
+            visibleAsymptotes.clear();
+            const circleX = CIRCLE_CENTER_X + CIRCLE_RADIUS * Math.cos(angleRad);
+            const circleY = CIRCLE_CENTER_Y - CIRCLE_RADIUS * Math.sin(angleRad);
+            graphValue = Math.sin(angleRad);
+            graphPointY = circleY;
+            drawDashedLine(circleX, circleY, GRAPH_START_X + angleRad * SCALE_X, graphPointY, activeColor);
+            drawPoint(circleX, circleY, activeColor);
+
+        } else if (currentFunc === 'cos') {
+            visibleAsymptotes.clear();
+            const cosVal = Math.cos(angleRad);
+            const circleX = CIRCLE_CENTER_X + CIRCLE_RADIUS * cosVal;
+            const circleY = CIRCLE_CENTER_Y - CIRCLE_RADIUS * Math.sin(angleRad);
+            graphValue = cosVal;
+            graphPointY = CIRCLE_CENTER_Y - CIRCLE_RADIUS * graphValue;
+            drawDashedLine(circleX, circleY, circleX, CIRCLE_CENTER_Y, COLORS.aux);
+            drawPoint(circleX, CIRCLE_CENTER_Y, activeColor, 4);
+            drawPoint(circleX, circleY, COLORS.aux, 4);
+
+        } else if (currentFunc === 'tan') {
+            graphValue = Math.tan(angleRad);
+            const MAX_TAN_VAL = 4;
+            let clampedValue = Math.max(-MAX_TAN_VAL, Math.min(MAX_TAN_VAL, graphValue));
+            graphPointY = CIRCLE_CENTER_Y - CIRCLE_RADIUS * clampedValue;
+
+            const tangentLineX = CIRCLE_CENTER_X + CIRCLE_RADIUS;
+            drawVLine(tangentLineX, COLORS.grid);
+
+            // === 修正ポイント: 動径の両サイドへの点線延長 ===
+            if (Math.abs(Math.cos(angleRad)) > 0.001) {
+                const intersectY = CIRCLE_CENTER_Y - CIRCLE_RADIUS * graphValue;
+                
+                const EXTEND_LENGTH = canvas.width;
+                const dx = Math.cos(angleRad);
+                const dy = Math.sin(angleRad);
+                // 円周上の点 P(x, y)
+                const Px = CIRCLE_CENTER_X + CIRCLE_RADIUS * dx;
+                const Py = CIRCLE_CENTER_Y - CIRCLE_RADIUS * dy;
+                // 円周上の点の方向の画面端
+                const endX_P = CIRCLE_CENTER_X + EXTEND_LENGTH * dx;
+                const endY_P = CIRCLE_CENTER_Y - EXTEND_LENGTH * dy;
+                // 反対側の画面端
+                const endX_Opposite = CIRCLE_CENTER_X - EXTEND_LENGTH * dx;
+                const endY_Opposite = CIRCLE_CENTER_Y + EXTEND_LENGTH * dy;
+                
+                // 1. 円周上の点 P から、その方向の画面端へ延長（点線）
+                ctx.beginPath();
+                ctx.setLineDash([2, 4]);
+                ctx.strokeStyle = COLORS.tanLineExtension;
+                ctx.lineWidth = 1;
+                ctx.moveTo(Px, Py); 
+                ctx.lineTo(endX_P, endY_P);
+                ctx.stroke();
+
+                // 2. 中心から反対側の画面端へ延長（点線）
+                ctx.beginPath();
+                ctx.setLineDash([2, 4]);
+                ctx.strokeStyle = COLORS.tanLineExtension;
+                ctx.lineWidth = 1;
+                ctx.moveTo(CIRCLE_CENTER_X, CIRCLE_CENTER_Y); 
+                ctx.lineTo(endX_Opposite, endY_Opposite);
+                ctx.stroke();
+
+                ctx.setLineDash([]); // 実線に戻す
+
+
+                if (Math.abs(graphValue) <= MAX_TAN_VAL + 0.5) {
+                     drawPoint(tangentLineX, intersectY, activeColor);
+                     drawDashedLine(tangentLineX, intersectY, GRAPH_START_X + angleRad * SCALE_X, graphPointY, activeColor);
+                }
+            }
+
+            const THRESHOLD = 5; 
+            ASYMPTOTE_ANGLES.forEach(targetDeg => {
+                if (Math.abs(angleDeg - targetDeg) < THRESHOLD) {
+                    visibleAsymptotes.add(targetDeg);
+                }
+                if (visibleAsymptotes.has(targetDeg)) {
+                    const targetRad = toRad(targetDeg);
+                    const asymptoteX = GRAPH_START_X + targetRad * SCALE_X;
+                    ctx.beginPath();
+                    ctx.setLineDash([8, 6]);
+                    ctx.moveTo(asymptoteX, 0);
+                    ctx.lineTo(asymptoteX, canvas.height);
+                    ctx.strokeStyle = COLORS.asymptote;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = COLORS.asymptote;
+                    ctx.font = 'bold 14px Arial';
+                    ctx.fillText(`${targetDeg}°`, asymptoteX + 5, 30);
+                }
+            });
+        }
+
+        const graphPointX = GRAPH_START_X + angleRad * SCALE_X;
+        if(Math.abs(graphValue) <= 4 || currentFunc !== 'tan') {
+             drawPoint(graphPointX, graphPointY, activeColor);
+        }
+        drawGraphPath(activeColor);
+
+        angleDisplay.textContent = `${angleDeg}°`;
+    }
+
+    function drawUnitCircle(angleRad) {
+        const circleX = CIRCLE_CENTER_X + CIRCLE_RADIUS * Math.cos(angleRad);
+        const circleY = CIRCLE_CENTER_Y - CIRCLE_RADIUS * Math.sin(angleRad);
+        
+        // 円の描画
+        ctx.beginPath();
+        ctx.arc(CIRCLE_CENTER_X, CIRCLE_CENTER_Y, CIRCLE_RADIUS, 0, Math.PI * 2);
+        ctx.strokeStyle = COLORS.axis; ctx.lineWidth = 2; ctx.stroke();
+        
+        // 動径 (中心から円周上の点まで) は常に実線
+        ctx.beginPath();
+        ctx.moveTo(CIRCLE_CENTER_X, CIRCLE_CENTER_Y);
+        ctx.lineTo(circleX, circleY);
+        ctx.strokeStyle = COLORS.axis; ctx.lineWidth = 2; ctx.stroke();
+
+
+        ctx.beginPath();
+        ctx.moveTo(CIRCLE_CENTER_X, CIRCLE_CENTER_Y);
+        ctx.arc(CIRCLE_CENTER_X, CIRCLE_CENTER_Y, 25, 0, -angleRad, true);
+        ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.fill();
+    }
+
+    function drawGraphPath(color) {
+        ctx.beginPath();
+        ctx.strokeStyle = color; ctx.lineWidth = 3;
+        let isDrawing = false;
+        for (let a = 0; a <= angleDeg; a++) {
+            const r = toRad(a);
+            const x = GRAPH_START_X + r * SCALE_X;
+            let val;
+            if (currentFunc === 'sin') val = Math.sin(r);
+            else if (currentFunc === 'cos') val = Math.cos(r);
+            else if (currentFunc === 'tan') val = Math.tan(r);
+            
+            const MAX_VAL = 5;
+            if (Math.abs(val) > MAX_VAL) { isDrawing = false; continue; }
+            const y = CIRCLE_CENTER_Y - CIRCLE_RADIUS * val;
+            if (!isDrawing) { ctx.moveTo(x, y); isDrawing = true; } 
+            else { ctx.lineTo(x, y); }
+        }
+        ctx.stroke();
+    }
+
+    function drawPoint(x, y, color, size = 6) {
+        ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fillStyle = color; ctx.fill();
+        ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    function drawDashedLine(x1, y1, x2, y2, color) {
+        ctx.beginPath(); ctx.setLineDash([5, 5]);
+        ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+        ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+    }
+    function drawVLine(x, color) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
+        ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke();
+    }
+
+    function drawAxes() {
+        ctx.font = '14px Arial';
+        ctx.fillStyle = COLORS.axis;
+        ctx.strokeStyle = COLORS.grid;
+        ctx.lineWidth = 1;
+        drawSingleAxis(CIRCLE_CENTER_X, CIRCLE_CENTER_Y, 130, 130, ['1', '-1'], ['1', '-1']);
+        drawSingleAxis(GRAPH_START_X, CIRCLE_CENTER_Y, 440, 130, [], ['1', '-1']);
+        const labels = ['π', '2π', '3π', '4π'];
+        for(let i=0; i<labels.length; i++){
+             const x = GRAPH_START_X + (i+1) * Math.PI * SCALE_X;
+             ctx.beginPath(); ctx.moveTo(x, CIRCLE_CENTER_Y - 5); ctx.lineTo(x, CIRCLE_CENTER_Y + 5); ctx.stroke();
+             ctx.fillText(labels[i], x - 8, CIRCLE_CENTER_Y + 25);
+        }
+        ctx.font = 'bold 16px Arial';
+        ctx.fillStyle = COLORS[currentFunc];
+        ctx.fillText(`y = ${currentFunc} θ`, GRAPH_START_X + 10, CIRCLE_CENTER_Y - 140);
+    }
+
+    function drawSingleAxis(cx, cy, w, h, xLabels, yLabels) {
+        ctx.beginPath();
+        ctx.moveTo(cx - w, cy); ctx.lineTo(cx + w, cy);
+        ctx.moveTo(cx, cy - h); ctx.lineTo(cx, cy + h);
+        ctx.stroke();
+        if(xLabels[0]) ctx.fillText(xLabels[0], cx + CIRCLE_RADIUS + 5, cy + 20);
+        if(yLabels[0]) ctx.fillText(yLabels[0], cx + 5, cy - CIRCLE_RADIUS + 5);
+    }
+
+    playPauseBtn.addEventListener('click', () => {
+        isAnimating = !isAnimating;
+        if (isAnimating) animate(); else cancelAnimationFrame(animationId);
+    });
+    resetBtn.addEventListener('click', () => {
+        isAnimating = false; cancelAnimationFrame(animationId);
+        angleDeg = 0; angleSlider.value = 0; 
+        visibleAsymptotes.clear();
+        draw();
+    });
+    angleSlider.addEventListener('input', (e) => {
+        isAnimating = false; cancelAnimationFrame(animationId);
+        angleDeg = parseInt(e.target.value); draw();
+    });
+    funcRadios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            currentFunc = e.target.value;
+            isAnimating = false; cancelAnimationFrame(animationId);
+            angleDeg = 0; angleSlider.value = 0; 
+            visibleAsymptotes.clear();
+            draw();
+        });
+    });
+    function animate() {
+        if (!isAnimating) return;
+        angleDeg = (angleDeg + 1) % 721;
+        angleSlider.value = angleDeg;
+        draw();
+        animationId = requestAnimationFrame(animate);
+    }
+    draw();
+</script>
+</body>
+</html>
